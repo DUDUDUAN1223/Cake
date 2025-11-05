@@ -6,15 +6,13 @@ import uvicorn, threading, queue, time, random, os
 
 app = FastAPI()
 
-# 密碼設定（上雲後你可改這裡）
-ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD", "eggadmin")
-
 orders = []
 orders_lock = threading.Lock()
 job_q = queue.Queue()
 is_worker_running = threading.Event()
 stop_event = threading.Event()
 
+# ======= HTML =======
 INDEX_HTML = Template("""
 <!doctype html><meta name=viewport content="width=device-width,initial-scale=1">
 <title>點餐</title>
@@ -29,7 +27,20 @@ INDEX_HTML = Template("""
   <input type="number" name="qty" min="1" value="1" required><br><br>
   <button type="submit">送出</button>
 </form>
-<p style="margin-top:1rem"><a href="/admin">管理頁</a></p>
+<p style="margin-top:1rem"><a href="/admin">（店員）管理頁</a></p>
+""")
+
+THANKS_HTML = Template("""
+<!doctype html><meta name=viewport content="width=device-width,initial-scale=1">
+<title>已收到訂單</title>
+<h2>感謝下單！</h2>
+{% if o %}
+<p>訂單編號：<b>#{{o["id"]}}</b> ｜ 口味：{{o["sku"]}} ｜ 數量：{{o["qty"]}}</p>
+{% else %}
+<p>找不到這筆訂單。</p>
+{% endif %}
+<p>您可以稍後再回到本頁查看，或至櫃檯詢問進度。</p>
+<p><a href="/">回到點餐頁</a></p>
 """)
 
 ADMIN_HTML = Template("""
@@ -41,7 +52,8 @@ ADMIN_HTML = Template("""
 <ol>
 {% for o in orders %}
   <li>
-    #{{o["id"]}} | {{o["sku"]}} x {{o["qty"]}} | {{o["ts"]}} | 狀態：<b>{{o["status"]}}</b>
+    #{{o["id"]}} | {{o["sku"]}} x {{o["qty"]}} | {{o["ts"]}} |
+    狀態：<b>{{o["status"]}}</b>
     {% if o.get("progress") is not none %}
       ｜ 進度：{{o["progress"]}}%
     {% endif %}
@@ -51,6 +63,7 @@ ADMIN_HTML = Template("""
 <p><a href="/">回點餐頁</a></p>
 """)
 
+# ======= 小工具 =======
 def _now(): return datetime.now().strftime("%H:%M:%S")
 
 def _find(oid: int):
@@ -64,10 +77,11 @@ def _set(oid: int, **fields):
             o.update(fields)
             o["ts"] = _now()
 
+# 模擬一份製作流程（之後把 DOBOT/Arduino 流程塞進來即可）
 def run_one_batch(order: dict):
     total_steps = random.randint(5, 8)
     for i in range(total_steps):
-        time.sleep(1)
+        time.sleep(1)  # 模擬動作耗時
         prog = int((i + 1) / total_steps * 100)
         _set(order["id"], progress=prog)
     _set(order["id"], status="done", progress=100)
@@ -92,6 +106,7 @@ def worker():
 
 threading.Thread(target=worker, daemon=True).start()
 
+# ======= 路由 =======
 @app.get("/", response_class=HTMLResponse)
 def index():
     return INDEX_HTML.render()
@@ -103,13 +118,19 @@ def order(sku: str = Form(...), qty: int = Form(...)):
         orders.insert(0, {"id": oid, "sku": sku, "qty": int(qty),
                           "ts": _now(), "status": "queued", "progress": None})
     job_q.put(oid)
-    return RedirectResponse(url="/admin?pw=" + ADMIN_PASSWORD, status_code=303)
+    # ★ 改成跳「感謝頁」，不再進後台
+    return RedirectResponse(url=f"/thanks?oid={oid}", status_code=303)
+
+@app.get("/thanks", response_class=HTMLResponse)
+def thanks(oid: int):
+    o = _find(oid)
+    return THANKS_HTML.render(o=o)
 
 @app.get("/admin", response_class=HTMLResponse)
 def admin(request: Request):
     pw = request.query_params.get("pw")
     if pw != ADMIN_PASSWORD:
-        raise HTTPException(status_code=401, detail="請輸入正確密碼：在網址加上 ?pw=你的密碼")
+        raise HTTPException(status_code=401, detail="請在網址加上 ?pw=你的密碼")
     with orders_lock:
         snapshot = list(orders)
     return ADMIN_HTML.render(orders=snapshot, is_running=is_worker_running.is_set())
@@ -120,7 +141,8 @@ def api_orders():
         return JSONResponse(list(orders))
 
 @app.on_event("shutdown")
-def on_shutdown(): stop_event.set()
+def on_shutdown():
+    stop_event.set()
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 8000))
