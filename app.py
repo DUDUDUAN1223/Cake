@@ -81,11 +81,11 @@ button:hover{filter:brightness(1.05)}
 # ─────────────────────────────────────────────
 INDEX_HTML = Template("""
 <!doctype html><meta name=viewport content="width=device-width,initial-scale=1">
-<title>雞蛋糕點餐</title>
+<title>全自動雞蛋糕製作平台</title>
 <link rel="icon" href="/favicon.svg">
 {{ css|safe }}
 <div class="container">
-  <div class="logo"><span class="dot"></span><h1>雞蛋糕點餐</h1></div>
+  <div class="logo"><span class="dot"></span><h1>全自動雞蛋糕製作平台</h1></div>
   <div class="card">
     <h2>選擇品項</h2>
     <p>手機下單、櫃檯取餐。平均製作 5到8 分鐘。</p>
