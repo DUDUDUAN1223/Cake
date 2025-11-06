@@ -2,6 +2,7 @@ from fastapi import FastAPI, Form, Request
 from fastapi.responses import HTMLResponse, RedirectResponse, JSONResponse, Response
 from jinja2 import Template
 from datetime import datetime
+from zoneinfo import ZoneInfo   # ✅ 加入時區模組
 import uvicorn, threading, queue, time, random, os, sys
 
 app = FastAPI()
@@ -18,6 +19,9 @@ if not ADMIN_PASSWORD:
     else:
         print("❌ ERROR: ADMIN_PASSWORD 未設定（請到 Render → Environment 新增）", file=sys.stderr)
         raise SystemExit(1)
+
+# ✅ 設定時區（預設 Asia/Taipei，可改環境變數 APP_TZ）
+APP_TZ = ZoneInfo(os.getenv("APP_TZ", "Asia/Taipei"))
 
 # ─────────────────────────────────────────────
 # 訂單佇列與狀態
@@ -77,7 +81,7 @@ button:hover{filter:brightness(1.05)}
 """
 
 # ─────────────────────────────────────────────
-# HTML 模板（不使用 f-string，改用渲染變數避免花括號衝突）
+# HTML 模板
 # ─────────────────────────────────────────────
 INDEX_HTML = Template("""
 <!doctype html><meta name=viewport content="width=device-width,initial-scale=1">
@@ -88,7 +92,7 @@ INDEX_HTML = Template("""
   <div class="logo"><span class="dot"></span><h1>全自動雞蛋糕製作平台</h1></div>
   <div class="card">
     <h2>選擇品項</h2>
-    <p>手機下單、櫃檯取餐。平均製作 5到8 分鐘。</p>
+    <p>請在下方選擇口味與數量，我們將為您現烤雞蛋糕 🍰</p>
     <form method="post" action="/order">
       <label class="label">口味</label>
       <select name="sku">
@@ -120,7 +124,7 @@ THANKS_HTML = Template("""
       <p class="success">✅ 已收到訂單 <span class="id">#{{ o["id"] }}</span></p>
       <div class="hr"></div>
       <p>口味：<b>{{ o["sku"] }}</b>　數量：<b>{{ o["qty"] }}</b></p>
-      <p class="warn">小提醒：請保持頁面開啟，取餐請告知訂單編號。</p>
+      <p class="warn">請保持此頁面開啟，取餐時報訂單編號即可。</p>
     {% else %}
       <p class="error">找不到這筆訂單。</p>
     {% endif %}
@@ -148,7 +152,7 @@ ADMIN_HTML = Template("""
           <th class="th" style="width:90px">數量</th>
           <th class="th" style="width:120px">狀態</th>
           <th class="th">進度</th>
-          <th class="th" style="width:120px">時間</th>
+          <th class="th" style="width:150px">時間</th>
         </tr>
       </thead>
       <tbody>
@@ -178,7 +182,8 @@ ADMIN_HTML = Template("""
 # 工具
 # ─────────────────────────────────────────────
 def _now() -> str:
-    return datetime.now().strftime("%H:%M:%S")
+    """台北時間"""
+    return datetime.now(APP_TZ).strftime("%H:%M:%S")
 
 def _find(oid: int):
     with orders_lock:
@@ -191,7 +196,7 @@ def _set(oid: int, **fields):
             o.update(fields)
             o["ts"] = _now()
 
-# 模擬製作流程（之後可換成你的機器流程）
+# 模擬製作流程（可接入實機控制）
 def run_one_batch(order: dict):
     total_steps = random.randint(5, 8)
     for i in range(total_steps):
@@ -244,7 +249,6 @@ def thanks(oid: int):
     o = _find(oid)
     return THANKS_HTML.render(o=o, css=BASE_CSS)
 
-# 隱藏後台：未授權回 404；授權頁加 noindex
 ADMIN_HEADERS = {"X-Robots-Tag": "noindex, nofollow, noarchive"}
 
 @app.get("/admin", response_class=HTMLResponse)
@@ -262,7 +266,6 @@ def api_orders():
     with orders_lock:
         return JSONResponse(list(orders))
 
-# favicon（不需外部檔案）
 @app.get("/favicon.svg")
 def favicon():
     svg = """<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
