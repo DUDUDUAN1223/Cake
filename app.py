@@ -14,8 +14,8 @@ ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD")
 
 if not ADMIN_PASSWORD:
     if DEBUG:
-        ADMIN_PASSWORD = "DUAN1223"
-        print("[DEBUG] 使用預設管理密碼：DUAN1223")
+        ADMIN_PASSWORD = "eggadmin"
+        print("[DEBUG] 使用預設管理密碼：eggadmin")
     else:
         print("❌ ERROR: ADMIN_PASSWORD 未設定（請到 Render → Environment 新增）", file=sys.stderr)
         raise SystemExit(1)
@@ -46,7 +46,6 @@ INDEX_HTML = Template("""
   <input type="number" name="qty" min="1" value="1" required><br><br>
   <button type="submit">送出訂單</button>
 </form>
-<p style="margin-top:1rem"><a href="/admin">（店員）管理頁</a></p>
 """)
 
 THANKS_HTML = Template("""
@@ -148,20 +147,19 @@ def thanks(oid: int):
     o = _find(oid)
     return THANKS_HTML.render(o=o)
 
-# 未授權時回 401 HTML（不丟例外，避免 500）
+# 隱藏管理頁：未授權直接回 404；授權頁加 noindex
+ADMIN_HEADERS = {"X-Robots-Tag": "noindex, nofollow, noarchive"}
+
 @app.get("/admin", response_class=HTMLResponse)
 def admin(request: Request):
     pw = request.query_params.get("pw")
     if pw != ADMIN_PASSWORD:
-        msg = """
-        <!doctype html><meta name=viewport content="width=device-width,initial-scale=1">
-        <h3>未授權 / Unauthorized</h3>
-        <p>請在網址後加上 <code>?pw=你的密碼</code> 後再嘗試。</p>
-        """
-        return HTMLResponse(msg, status_code=401)
+        return HTMLResponse("<h3>Not Found</h3>", status_code=404)
+
     with orders_lock:
         snapshot = list(orders)
-    return ADMIN_HTML.render(orders=snapshot, is_running=is_worker_running.is_set())
+    html = ADMIN_HTML.render(orders=snapshot, is_running=is_worker_running.is_set())
+    return HTMLResponse(html, headers=ADMIN_HEADERS)
 
 @app.get("/api/orders")
 def api_orders():
