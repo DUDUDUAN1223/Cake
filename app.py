@@ -88,7 +88,7 @@ INDEX_HTML = Template("""
   <div class="logo"><span class="dot"></span><h1>雞蛋糕點餐</h1></div>
   <div class="card">
     <h2>選擇品項</h2>
-    <p>手機下單、櫃檯取餐。平均製作 5–8 步驟。</p>
+    <p>手機下單、櫃檯取餐。平均製作 5到8 分鐘。</p>
     <form method="post" action="/order">
       <label class="label">口味</label>
       <select name="sku">
